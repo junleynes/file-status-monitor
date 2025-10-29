@@ -9,6 +9,7 @@ export type User = {
   avatar?: string | null;
   twoFactorRequired?: boolean;
   twoFactorSecret?: string | null;
+  lastLogin?: string | null;
 };
 
 export type FileStatus = {

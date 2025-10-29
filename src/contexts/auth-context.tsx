@@ -72,11 +72,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     if (result.success && result.user) {
       const userToLogin = result.user;
+      
+      await db.updateUserLastLogin(userToLogin.id);
+      
       if (userToLogin.twoFactorRequired) {
         const requiresSetup = !userToLogin.twoFactorSecret;
         return { success: true, twoFactorRequired: true, requiresTwoFactorSetup: requiresSetup, user: userToLogin };
       } else {
         const { password: _, ...userToStore } = userToLogin;
+        userToStore.lastLogin = new Date().toISOString();
         localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(userToStore));
         setUser(userToStore);
         await refreshUsers();
@@ -91,7 +95,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isValid) {
       const userToLogin = await db.getUserById(userId);
       if (userToLogin) {
+        await db.updateUserLastLogin(userToLogin.id);
         const { password: _, ...userToStore } = userToLogin;
+        userToStore.lastLogin = new Date().toISOString();
         localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(userToStore));
         setUser(userToStore);
         await writeLog({level: 'AUDIT', actor: userToLogin.username, action: 'USER_LOGIN_2FA_SUCCESS', details: `User '${userToLogin.username}' completed 2FA login.`});

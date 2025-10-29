@@ -38,7 +38,7 @@ function migrateDataFromJson(db: Database.Database) {
             db.exec('DELETE FROM logs');
 
             // Users
-            const insertUser = db.prepare('INSERT OR REPLACE INTO users (id, username, name, email, role, password, avatar, twoFactorRequired, twoFactorSecret) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            const insertUser = db.prepare('INSERT OR REPLACE INTO users (id, username, name, email, role, password, avatar, twoFactorRequired, twoFactorSecret, lastLogin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             jsonData.users.forEach(user => {
                 insertUser.run(
                     user.id,
@@ -49,7 +49,8 @@ function migrateDataFromJson(db: Database.Database) {
                     user.password || null,
                     user.avatar || null,
                     user.twoFactorRequired ? 1 : 0,
-                    user.twoFactorSecret || null
+                    user.twoFactorSecret || null,
+                    user.lastLogin || null
                 );
             });
             console.log(`[DB] Migrated ${jsonData.users.length} users.`);
@@ -121,7 +122,8 @@ const getDb = (): Database.Database => {
                 password TEXT,
                 avatar TEXT,
                 twoFactorRequired INTEGER DEFAULT 0,
-                twoFactorSecret TEXT
+                twoFactorSecret TEXT,
+                lastLogin TEXT
             );
 
             CREATE TABLE IF NOT EXISTS file_statuses (
@@ -217,22 +219,22 @@ export async function addUser(user: User): Promise<{ success: boolean }> {
 
 export async function updateUser(user: User): Promise<void> {
     const db = getDb();
-    const stmt = db.prepare('UPDATE users SET username = ?, name = ?, email = ?, role = ?, password = ?, avatar = ?, twoFactorRequired = ?, twoFactorSecret = ? WHERE id = ?');
+    const stmt = db.prepare('UPDATE users SET username = ?, name = ?, email = ?, role = ?, password = ?, avatar = ?, twoFactorRequired = ?, twoFactorSecret = ?, lastLogin = ? WHERE id = ?');
     stmt.run(
         user.username, user.name, user.email || null, user.role, 
         user.password, user.avatar || null, user.twoFactorRequired ? 1 : 0, 
-        user.twoFactorSecret || null, user.id
+        user.twoFactorSecret || null, user.lastLogin || null, user.id
     );
 }
 
 export async function bulkUpsertUsers(users: User[]): Promise<void> {
     const db = getDb();
-    const stmt = db.prepare('INSERT OR REPLACE INTO users (id, username, name, email, role, avatar, twoFactorRequired, twoFactorSecret) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    const stmt = db.prepare('INSERT OR REPLACE INTO users (id, username, name, email, role, avatar, twoFactorRequired, twoFactorSecret, lastLogin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
     const transaction = db.transaction((usersToInsert: User[]) => {
         for (const user of usersToInsert) {
              stmt.run(
                 user.id, user.username, user.name, user.email || null, user.role, 
-                user.avatar || null, user.twoFactorRequired ? 1 : 0, user.twoFactorSecret || null
+                user.avatar || null, user.twoFactorRequired ? 1 : 0, user.twoFactorSecret || null, user.lastLogin || null
             );
         }
     });
@@ -241,13 +243,13 @@ export async function bulkUpsertUsers(users: User[]): Promise<void> {
 
 export async function bulkUpsertUsersWithPasswords(users: User[]): Promise<void> {
     const db = getDb();
-    const stmt = db.prepare('INSERT OR REPLACE INTO users (id, username, name, email, role, password, avatar, twoFactorRequired, twoFactorSecret) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const stmt = db.prepare('INSERT OR REPLACE INTO users (id, username, name, email, role, password, avatar, twoFactorRequired, twoFactorSecret, lastLogin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     const transaction = db.transaction((usersToInsert: User[]) => {
         for (const user of usersToInsert) {
              stmt.run(
                 user.id, user.username, user.name, user.email || null, user.role, 
                 user.password, user.avatar || null, user.twoFactorRequired ? 1 : 0, 
-                user.twoFactorSecret || null
+                user.twoFactorSecret || null, user.lastLogin || null
             );
         }
     });
@@ -258,6 +260,12 @@ export async function updateUserPassword(userId: string, newPassword: string): P
     const db = getDb();
     const stmt = db.prepare('UPDATE users SET password = ? WHERE id = ?');
     stmt.run(newPassword, userId);
+}
+
+export async function updateUserLastLogin(userId: string): Promise<void> {
+    const db = getDb();
+    const stmt = db.prepare('UPDATE users SET lastLogin = ? WHERE id = ?');
+    stmt.run(new Date().toISOString(), userId);
 }
 
 

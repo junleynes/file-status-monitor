@@ -1,14 +1,14 @@
 
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { User } from "@/types";
-import { KeyRound, UserPlus, Users, Trash2, ShieldCheck, ShieldOff, Pencil, Mail, MessageSquareWarning, Upload, Download, AlertTriangle } from "lucide-react";
+import { KeyRound, UserPlus, Users, Trash2, ShieldCheck, ShieldOff, Pencil, Mail, MessageSquareWarning, Upload, Download, AlertTriangle, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AnimatePresence, motion } from "framer-motion";
 import { Label } from "@/components/ui/label";
@@ -32,6 +32,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { format, formatDistanceToNow, parseISO } from "date-fns";
 
 
 export default function UsersPage() {
@@ -279,6 +280,21 @@ export default function UsersPage() {
     });
   };
 
+  const formatLastLogin = (dateString: string | null | undefined) => {
+    if (!dateString) return "Never";
+    try {
+        const date = parseISO(dateString);
+        return `${format(date, "MM/dd/yyyy hh:mm a")} (${formatDistanceToNow(date, { addSuffix: true })})`
+    } catch {
+        return "Invalid date";
+    }
+  }
+  
+  const activeUsers = useMemo(() => {
+    const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+    return users.filter(u => u.lastLogin && new Date(u.lastLogin).getTime() > fiveMinutesAgo);
+  }, [users]);
+
 
   if (loading || user?.role !== 'admin') {
     return null;
@@ -307,6 +323,43 @@ export default function UsersPage() {
             </Button>
         </div>
       </div>
+      
+       <Card>
+        <CardHeader>
+          <CardTitle>Current Sessions</CardTitle>
+          <CardDescription>Users who have been active in the last 5 minutes.</CardDescription>
+        </CardHeader>
+        <CardContent>
+           <AnimatePresence>
+            {activeUsers.length > 0 ? (
+                <div className="flex flex-wrap gap-4">
+                    {activeUsers.map((u: User) => (
+                         <motion.div
+                            key={u.id}
+                            layout
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.8 }}
+                            transition={{ duration: 0.3 }}
+                        >
+                            <div className="flex items-center gap-2 rounded-full border bg-background p-1 pr-3">
+                                <Avatar className="h-8 w-8">
+                                    {u.avatar && <AvatarImage src={u.avatar} alt={u.name ?? ''} />}
+                                    <AvatarFallback>{u.name?.[0].toUpperCase()}</AvatarFallback>
+                                </Avatar>
+                                <div>
+                                    <p className="text-sm font-medium">{u.name}</p>
+                                </div>
+                            </div>
+                         </motion.div>
+                    ))}
+                </div>
+            ) : (
+                 <p className="text-sm text-muted-foreground">No users are currently active.</p>
+            )}
+           </AnimatePresence>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -380,6 +433,10 @@ export default function UsersPage() {
                                     <div>
                                         <p className="font-medium text-sm">{u.name} <span className="text-xs text-muted-foreground">({u.role})</span></p>
                                         <p className="text-xs text-muted-foreground">@{u.username} {u.email && `· ${u.email}`}</p>
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+                                            <Clock className="h-3 w-3" />
+                                            <span>Last Login: {formatLastLogin(u.lastLogin)}</span>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-1 flex-wrap self-end sm:self-center">
