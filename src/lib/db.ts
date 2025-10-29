@@ -4,7 +4,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import Database from 'better-sqlite3';
-import type { Database as JsonDatabase, BrandingSettings, CleanupSettings, FileStatus, MonitoredPaths, ProcessingSettings, SmtpSettings, User, MaintenanceSettings } from '../types';
+import type { Database as JsonDatabase, BrandingSettings, CleanupSettings, FileStatus, MonitoredPaths, ProcessingSettings, SmtpSettings, User, MaintenanceSettings, LogEntry } from '../types';
 
 const dbPath = path.resolve(process.cwd(), 'src/lib/database.sqlite');
 const jsonDbPath = path.resolve(process.cwd(), 'src/lib/database.json');
@@ -35,6 +35,7 @@ function migrateDataFromJson(db: Database.Database) {
             db.exec('DELETE FROM users');
             db.exec('DELETE FROM file_statuses');
             db.exec('DELETE FROM settings');
+            db.exec('DELETE FROM logs');
 
             // Users
             const insertUser = db.prepare('INSERT OR REPLACE INTO users (id, username, name, email, role, password, avatar, twoFactorRequired, twoFactorSecret) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -78,6 +79,16 @@ function migrateDataFromJson(db: Database.Database) {
                 );
             });
             console.log(`[DB] Migrated ${jsonData.fileStatuses.length} file statuses.`);
+
+            // Logs (might not exist in old JSON)
+            if (jsonData.logs) {
+                const insertLog = db.prepare('INSERT OR REPLACE INTO logs (id, timestamp, level, actor, action, details) VALUES (?, ?, ?, ?, ?, ?)');
+                jsonData.logs.forEach(log => {
+                    insertLog.run(log.id, log.timestamp, log.level, log.actor, log.action, log.details);
+                });
+                console.log(`[DB] Migrated ${jsonData.logs.length} logs.`);
+            }
+
 
         })();
 
@@ -128,6 +139,18 @@ const getDb = (): Database.Database => {
                 key TEXT PRIMARY KEY,
                 value TEXT
             );
+            
+            CREATE TABLE IF NOT EXISTS logs (
+                id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                level TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                action TEXT NOT NULL,
+                details TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_logs_actor ON logs(actor);
+            CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level);
         `);
         
         dbInstance = db;
@@ -296,6 +319,28 @@ export async function deleteFileStatusesByAge(maxAgeMs: number): Promise<number>
     return result.changes;
 }
 
+// --- LOGS ---
+export async function getLogs(): Promise<LogEntry[]> {
+    const db = getDb();
+    const stmt = db.prepare('SELECT * FROM logs ORDER BY timestamp DESC');
+    return stmt.all() as LogEntry[];
+}
+
+export async function addLog(log: LogEntry): Promise<void> {
+    const db = getDb();
+    const stmt = db.prepare('INSERT INTO logs (id, timestamp, level, actor, action, details) VALUES (?, ?, ?, ?, ?, ?)');
+    stmt.run(log.id, log.timestamp, log.level, log.actor, log.action, log.details);
+}
+
+export async function deleteLogsByAge(maxAgeMs: number): Promise<number> {
+    const db = getDb();
+    const cutoffDate = new Date(Date.now() - maxAgeMs).toISOString();
+    const stmt = db.prepare('DELETE FROM logs WHERE timestamp <= ?');
+    const result = stmt.run(cutoffDate);
+    return result.changes;
+}
+
+
 // --- SETTINGS ---
 export async function getBranding(): Promise<BrandingSettings> {
     return getSetting<BrandingSettings>('branding', {
@@ -385,6 +430,7 @@ export async function readDb(): Promise<JsonDatabase> {
         monitoredPaths,
         monitoredExtensions,
         fileStatuses,
+        logs,
         cleanupSettings,
         processingSettings,
         failureRemark,
@@ -396,6 +442,7 @@ export async function readDb(): Promise<JsonDatabase> {
         getMonitoredPaths(),
         getMonitoredExtensions(),
         getFileStatuses(),
+        getLogs(),
         getCleanupSettings(),
         getProcessingSettings(),
         getFailureRemark(),
@@ -408,6 +455,7 @@ export async function readDb(): Promise<JsonDatabase> {
         monitoredPaths,
         monitoredExtensions,
         fileStatuses,
+        logs,
         cleanupSettings,
         processingSettings,
         failureRemark,

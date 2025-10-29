@@ -5,6 +5,7 @@ import React, { createContext, useState, useEffect, ReactNode, useCallback } fro
 import type { User } from '@/types';
 import * as db from '@/lib/db';
 import * as actions from '@/lib/actions';
+import { writeLog } from '@/lib/logger';
 
 
 const CURRENT_USER_STORAGE_KEY = 'file-tracker-user';
@@ -93,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { password: _, ...userToStore } = userToLogin;
         localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(userToStore));
         setUser(userToStore);
+        await writeLog({level: 'AUDIT', actor: userToLogin.username, action: 'USER_LOGIN_2FA_SUCCESS', details: `User '${userToLogin.username}' completed 2FA login.`});
         await refreshUsers();
         return true;
       }
@@ -101,6 +103,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    if(user) {
+        writeLog({level: 'AUDIT', actor: user.username, action: 'USER_LOGOUT', details: `User '${user.username}' logged out.`});
+    }
     localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
     setUser(null);
   };
@@ -122,10 +127,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userToUpdate = await db.getUserById(userId);
 
     if (!userToUpdate || userToUpdate.password !== currentPassword) {
-      return false; // Current password does not match
+      if(userToUpdate) {
+          await writeLog({level: 'WARN', actor: userToUpdate.username, action: 'PASSWORD_CHANGE_FAILED', details: 'User provided an incorrect current password.'});
+      }
+      return false;
     }
     userToUpdate.password = newPassword;
-    await db.updateUser(userToUpdate);
+    await db.updateUserPassword(userToUpdate.id, newPassword);
+    await writeLog({level: 'AUDIT', actor: userToUpdate.username, action: 'PASSWORD_CHANGE_SUCCESS', details: 'User changed their own password.'});
     return true;
   };
 

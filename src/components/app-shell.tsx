@@ -39,7 +39,7 @@ import {
   DropdownMenuPortal,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { BarChartIcon, CogIcon, LogOutIcon, Moon, Sun, Laptop, KeyRound, UserCircle, UploadCloud, XCircle, LineChart, Users } from 'lucide-react';
+import { BarChartIcon, CogIcon, LogOutIcon, Moon, Sun, Laptop, KeyRound, UserCircle, UploadCloud, XCircle, LineChart, Users, BookText } from 'lucide-react';
 import { Skeleton } from './ui/skeleton';
 import { useTheme } from "next-themes";
 import { BrandLogo } from './brand-logo';
@@ -428,6 +428,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </SidebarMenuItem>
               {user?.role === 'admin' && (
                 <>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      onClick={() => router.push('/logs')}
+                      isActive={pathname === '/logs'}
+                      tooltip="Logs"
+                    >
+                      <BookText />
+                      <span>Logs</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       onClick={() => router.push('/users')}

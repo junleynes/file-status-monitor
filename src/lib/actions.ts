@@ -3,7 +3,7 @@
 
 import { revalidatePath } from 'next/cache';
 import * as db from './db';
-import type { BrandingSettings, CleanupSettings, MonitoredPaths, User, FileStatus, MonitoredPath, SmtpSettings, ProcessingSettings, ChartData, Database, MaintenanceSettings } from '../types';
+import type { BrandingSettings, CleanupSettings, MonitoredPaths, User, FileStatus, MonitoredPath, SmtpSettings, ProcessingSettings, ChartData, Database, MaintenanceSettings, LogEntry } from '../types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { authenticator } from 'otplib';
@@ -11,12 +11,14 @@ import qrcode from 'qrcode';
 import nodemailer from 'nodemailer';
 import Papa from 'papaparse';
 import { format, parseISO, startOfWeek, startOfMonth } from 'date-fns';
+import { writeLog } from './logger';
 
 
 export async function ensureAdminUserExists() {
   const adminUser = await db.getUserByUsername('admin');
   if (!adminUser) {
     console.log("Admin user not found, creating one.");
+    await writeLog({ level: 'INFO', actor: 'system', action: 'CREATE_DEFAULT_ADMIN', details: 'Initial admin user created with default password.' });
     const newAdmin: User = {
       id: 'user-admin-initial',
       username: 'admin',
@@ -33,8 +35,10 @@ export async function ensureAdminUserExists() {
 export async function validateUserCredentials(username: string, password: string):Promise<{ success: boolean; user?: User }> {
   const user = await db.getUserByUsername(username);
   if (user && user.password === password) {
+    await writeLog({ level: 'AUDIT', actor: username, action: 'USER_LOGIN_SUCCESS', details: `User '${username}' logged in successfully.` });
     return { success: true, user: user };
   }
+  await writeLog({ level: 'WARN', actor: 'system', action: 'USER_LOGIN_FAILED', details: `Failed login attempt for username: '${username}'.` });
   return { success: false };
 }
 
@@ -50,7 +54,8 @@ export async function generateTwoFactorSecretForUser(userId: string, username: s
     const secret = authenticator.generateSecret();
     user.twoFactorSecret = secret;
     await db.updateUser(user);
-    revalidatePath('/users'); // To update user data for other admins
+    await writeLog({ level: 'AUDIT', actor: username, action: '2FA_SECRET_GENERATED', details: `Generated new 2FA secret for user '${username}'.` });
+    revalidatePath('/users');
   }
   
   const otpauth = authenticator.keyuri(username, issuer, user.twoFactorSecret!);
@@ -67,6 +72,7 @@ export async function enableTwoFactor(userId: string) {
 
     user.twoFactorRequired = true;
     await db.updateUser(user);
+    await writeLog({ level: 'AUDIT', actor: 'system', action: '2FA_ENABLED', details: `2FA requirement enabled for user '${user.username}'.` });
     revalidatePath('/users');
 }
 
@@ -79,6 +85,7 @@ export async function disableTwoFactor(userId: string) {
     user.twoFactorRequired = false;
     user.twoFactorSecret = null; // Clear the secret when disabling
     await db.updateUser(user);
+    await writeLog({ level: 'AUDIT', actor: 'system', action: '2FA_DISABLED', details: `2FA disabled for user '${user.username}'.` });
     revalidatePath('/users');
 }
 
@@ -88,7 +95,11 @@ export async function verifyTwoFactorToken(userId: string, token: string) {
   if (!user || !user.twoFactorSecret) {
     return false;
   }
-  return authenticator.verify({ token, secret: user.twoFactorSecret });
+  const isValid = authenticator.verify({ token, secret: user.twoFactorSecret });
+  if (!isValid) {
+    await writeLog({ level: 'WARN', actor: user.username, action: '2FA_VERIFICATION_FAILED', details: `User '${user.username}' submitted an invalid 2FA token.` });
+  }
+  return isValid;
 }
 
 
@@ -149,10 +160,14 @@ export async function retryFile(fileName: string, username: string): Promise<{ s
             await db.upsertFileStatus(fileStatus);
         }
         
+        await writeLog({ level: 'AUDIT', actor: username, action: 'FILE_RETRY', details: `File '${fileName}' was moved from failed to import for retry.` });
         revalidatePath('/dashboard');
+        revalidatePath('/logs');
         return { success: true };
     } catch (error: any) {
         console.error(`Error retrying file ${fileName}:`, error);
+        await writeLog({ level: 'ERROR', actor: username, action: 'FILE_RETRY_FAILED', details: `Attempted to retry file '${fileName}'. Error: ${error.message}` });
+        revalidatePath('/logs');
         if (error.code === 'EACCES') {
              return { success: false, error: `Permission Denied: The application user does not have write permissions to move files between the 'import' and 'failed' directories. Please check folder permissions on the server.` };
         }
@@ -188,10 +203,14 @@ export async function renameFile(oldName: string, newName: string, username: str
         };
         await db.upsertFileStatus(newFileStatus);
         
+        await writeLog({ level: 'AUDIT', actor: username, action: 'FILE_RENAME_AND_RETRY', details: `File '${oldName}' was renamed to '${newName}' and moved to import.` });
         revalidatePath('/dashboard');
+        revalidatePath('/logs');
         return { success: true };
     } catch (error: any) {
         console.error(`Error renaming and moving file ${oldName}:`, error);
+        await writeLog({ level: 'ERROR', actor: username, action: 'FILE_RENAME_FAILED', details: `Attempted to rename '${oldName}' to '${newName}'. Error: ${error.message}` });
+        revalidatePath('/logs');
         if (error.code === 'EACCES') {
              return { success: false, error: `Permission Denied: The application user does not have write permissions to move files from the 'failed' to the 'import' directory. Please check folder permissions on the server.` };
         }
@@ -209,10 +228,14 @@ export async function deleteFailedFile(fileName: string): Promise<{ success: boo
     try {
         await fs.unlink(filePath);
         await db.deleteFileStatus(fileName);
+        await writeLog({ level: 'AUDIT', actor: 'system', action: 'FILE_DELETED', details: `Permanently deleted file '${fileName}' from the failed directory.` });
         revalidatePath('/dashboard');
+        revalidatePath('/logs');
         return { success: true };
     } catch (error: any) {
         console.error(`Error deleting file ${fileName}:`, error);
+        await writeLog({ level: 'ERROR', actor: 'system', action: 'FILE_DELETE_FAILED', details: `Attempted to delete file '${fileName}'. Error: ${error.message}` });
+        revalidatePath('/logs');
         if (error.code === 'ENOENT') {
             await db.deleteFileStatus(fileName);
             revalidatePath('/dashboard');
@@ -288,10 +311,14 @@ export async function expandFilePrefixes(fileName: string, username: string): Pr
             await fs.unlink(originalFilePath);
             await db.deleteFileStatus(fileName);
             await db.bulkUpsertFileStatuses(newFilesToUpsert);
+            await writeLog({ level: 'AUDIT', actor: username, action: 'FILE_EXPAND', details: `File '${fileName}' was expanded into ${validPairs.length} new files.` });
             revalidatePath('/dashboard');
+            revalidatePath('/logs');
             return { success: true, count: validPairs.length };
         } catch (deleteError) {
             console.error(`[Action] ERROR: Failed to delete original expanded file "${fileName}":`, deleteError);
+             await writeLog({ level: 'ERROR', actor: username, action: 'FILE_EXPAND_FAILED', details: `Failed to delete original file '${fileName}' after expansion. Error: ${deleteError}` });
+             revalidatePath('/logs');
             return { success: false, error: `Failed to delete original file after expansion.` };
         }
     }
@@ -300,14 +327,18 @@ export async function expandFilePrefixes(fileName: string, username: string): Pr
 }
 
 export async function updateBrandingSettings(settings: BrandingSettings) {
+  await writeLog({ level: 'AUDIT', actor: 'system', action: 'SETTINGS_UPDATE_BRANDING', details: `Branding updated: Name=${settings.brandName}` });
   await db.updateBranding(settings);
   revalidatePath('/settings');
   revalidatePath('/', 'layout');
+  revalidatePath('/logs');
 }
 
 export async function updateSmtpSettings(settings: SmtpSettings) {
+    await writeLog({ level: 'AUDIT', actor: 'system', action: 'SETTINGS_UPDATE_SMTP', details: `SMTP settings updated for host: ${settings.host}` });
     await db.updateSmtpSettings(settings);
     revalidatePath('/settings');
+    revalidatePath('/logs');
 }
 
 export async function testSmtpConnection(): Promise<{success: boolean, error?: string}> {
@@ -329,8 +360,12 @@ export async function testSmtpConnection(): Promise<{success: boolean, error?: s
 
     try {
         await transporter.verify();
+        await writeLog({ level: 'INFO', actor: 'system', action: 'SMTP_TEST_SUCCESS', details: `Successfully connected to SMTP host: ${smtpSettings.host}` });
+        revalidatePath('/logs');
         return { success: true };
     } catch (error: any) {
+        await writeLog({ level: 'ERROR', actor: 'system', action: 'SMTP_TEST_FAILED', details: `Failed to connect to SMTP host: ${smtpSettings.host}. Error: ${error.message}` });
+        revalidatePath('/logs');
         return { success: false, error: `Connection failed: ${error.message}` };
     }
 }
@@ -363,19 +398,29 @@ export async function sendPasswordResetEmail(userId: string): Promise<{ success:
 
     try {
         await transporter.sendMail(mailOptions);
+        await writeLog({ level: 'AUDIT', actor: 'system', action: 'PASSWORD_RESET_EMAIL_SENT', details: `Sent password reset email to user '${user.username}' at ${user.email}.` });
+        revalidatePath('/logs');
         return { success: true };
     } catch (error: any) {
         console.error("Failed to send password reset email:", error);
+        await writeLog({ level: 'ERROR', actor: 'system', action: 'PASSWORD_RESET_EMAIL_FAILED', details: `Failed to send reset email to '${user.username}'. Error: ${error.message}` });
+        revalidatePath('/logs');
         return { success: false, error: `Failed to send email: ${error.message}` };
     }
 }
 
 export async function resetUserPasswordByAdmin(userId: string, newPassword: string): Promise<{ success: boolean, error?: string }> {
     try {
+        const user = await db.getUserById(userId);
+        if (!user) throw new Error("User not found");
         await db.updateUserPassword(userId, newPassword);
+        await writeLog({ level: 'AUDIT', actor: 'system', action: 'ADMIN_PASSWORD_RESET', details: `Admin manually reset password for user '${user.username}'.` });
+        revalidatePath('/logs');
         return { success: true };
     } catch (error: any) {
         console.error(`Failed to reset password for user ${userId}:`, error);
+        await writeLog({ level: 'ERROR', actor: 'system', action: 'ADMIN_PASSWORD_RESET_FAILED', details: `Failed to reset password for user ID '${userId}'. Error: ${error.message}` });
+        revalidatePath('/logs');
         return { success: false, error: 'An unexpected error occurred.' };
     }
 }
@@ -383,25 +428,36 @@ export async function resetUserPasswordByAdmin(userId: string, newPassword: stri
 export async function addUser(newUser: User): Promise<{ success: boolean, message?: string }> {
   const result = await db.addUser(newUser);
   if (result.success) {
+    await writeLog({ level: 'AUDIT', actor: 'system', action: 'USER_CREATED', details: `New user created: '${newUser.username}' with role '${newUser.role}'.` });
     revalidatePath('/users');
+    revalidatePath('/logs');
     return { success: true };
   }
   return { success: false, message: "A user with this username or email already exists." };
 }
 
 export async function removeUser(userId: string) {
+    const user = await db.getUserById(userId);
+    if (user) {
+        await writeLog({ level: 'AUDIT', actor: 'system', action: 'USER_REMOVED', details: `User '${user.username}' was removed.` });
+    }
     await db.removeUser(userId);
     revalidatePath('/users');
+    revalidatePath('/logs');
 }
 
 export async function updateUser(user: User) {
+    await writeLog({ level: 'AUDIT', actor: 'system', action: 'USER_UPDATED', details: `User details for '${user.username}' were updated.` });
     await db.updateUser(user);
     revalidatePath('/users');
+    revalidatePath('/logs');
 }
 
 export async function updateMonitoredPaths(paths: MonitoredPaths) {
+  await writeLog({ level: 'AUDIT', actor: 'system', action: 'SETTINGS_UPDATE_PATHS', details: `Monitored paths updated. Import: '${paths.import.path}', Failed: '${paths.failed.path}'.` });
   await db.updateMonitoredPaths(paths);
   revalidatePath('/settings');
+  revalidatePath('/logs');
 }
 
 export async function addMonitoredExtension(extension: string) {
@@ -409,41 +465,57 @@ export async function addMonitoredExtension(extension: string) {
     if (!extensions.includes(extension)) {
         extensions.push(extension);
         await db.updateMonitoredExtensions(extensions);
+        await writeLog({ level: 'AUDIT', actor: 'system', action: 'SETTINGS_ADD_EXTENSION', details: `Added monitored extension: '.${extension}'.` });
         revalidatePath('/settings');
+        revalidatePath('/logs');
     }
 }
 
 export async function removeMonitoredExtension(extension: string) {
     let extensions = await db.getMonitoredExtensions();
-    extensions = extensions.filter(e => e !== ext);
+    extensions = extensions.filter(e => e !== extension);
     await db.updateMonitoredExtensions(extensions);
+    await writeLog({ level: 'AUDIT', actor: 'system', action: 'SETTINGS_REMOVE_EXTENSION', details: `Removed monitored extension: '.${extension}'.` });
     revalidatePath('/settings');
+    revalidatePath('/logs');
 }
 
 export async function updateFailureRemark(remark: string) {
+    await writeLog({ level: 'AUDIT', actor: 'system', action: 'SETTINGS_UPDATE_FAILURE_REMARK', details: `Global failure remark updated.` });
     await db.updateFailureRemark(remark);
     revalidatePath('/settings');
+    revalidatePath('/logs');
 }
 
 export async function updateCleanupSettings(settings: CleanupSettings) {
+    await writeLog({ level: 'AUDIT', actor: 'system', action: 'SETTINGS_UPDATE_CLEANUP', details: `Cleanup settings updated.` });
     await db.updateCleanupSettings(settings);
     revalidatePath('/settings');
+    revalidatePath('/logs');
 }
 
 export async function updateProcessingSettings(settings: ProcessingSettings) {
+    await writeLog({ level: 'AUDIT', actor: 'system', action: 'SETTINGS_UPDATE_PROCESSING', details: `File processing settings updated.` });
     await db.updateProcessingSettings(settings);
     revalidatePath('/settings');
+    revalidatePath('/logs');
 }
 
 export async function updateMaintenanceSettings(settings: MaintenanceSettings) {
+    const action = settings.enabled ? 'MAINTENANCE_MODE_ENABLED' : 'MAINTENANCE_MODE_DISABLED';
+    const details = `Maintenance mode was ${settings.enabled ? 'enabled' : 'disabled'}.`;
+    await writeLog({ level: 'AUDIT', actor: 'system', action, details });
     await db.updateMaintenanceSettings(settings);
     revalidatePath('/settings');
     revalidatePath('/maintenance');
+    revalidatePath('/logs');
 }
 
 export async function clearAllFileStatuses() {
+    await writeLog({ level: 'AUDIT', actor: 'system', action: 'DB_CLEAR_FILE_STATUSES', details: `All file statuses were cleared from the database.` });
     await db.deleteAllFileStatuses();
     revalidatePath('/dashboard');
+    revalidatePath('/logs');
 }
 
 export async function exportFileStatusesToCsv(): Promise<{ csv?: string; error?: string }> {
@@ -453,9 +525,13 @@ export async function exportFileStatusesToCsv(): Promise<{ csv?: string; error?:
             return { error: "There are no file statuses to export." };
         }
         const csv = Papa.unparse(statuses);
+        await writeLog({ level: 'INFO', actor: 'system', action: 'EXPORT_FILE_STATUSES', details: `Exported ${statuses.length} file status records.` });
+        revalidatePath('/logs');
         return { csv };
     } catch (error: any) {
         console.error("Error exporting CSV:", error);
+        await writeLog({ level: 'ERROR', actor: 'system', action: 'EXPORT_FAILED', details: `File status export failed: ${error.message}` });
+        revalidatePath('/logs');
         return { error: "An unexpected error occurred during export." };
     }
 }
@@ -480,10 +556,14 @@ export async function importFileStatusesFromCsv(csvContent: string): Promise<{ i
         }));
 
         await db.bulkUpsertFileStatuses(statusesToImport);
+        await writeLog({ level: 'AUDIT', actor: 'system', action: 'IMPORT_FILE_STATUSES', details: `Imported ${statusesToImport.length} file status records from CSV.` });
         revalidatePath('/dashboard');
+        revalidatePath('/logs');
         return { importedCount: statusesToImport.length };
     } catch (error: any) {
         console.error("Error importing CSV:", error);
+        await writeLog({ level: 'ERROR', actor: 'system', action: 'IMPORT_FAILED', details: `File status import failed: ${error.message}` });
+        revalidatePath('/logs');
         return { error: `An unexpected error occurred during import: ${error.message}` };
     }
 }
@@ -495,9 +575,13 @@ export async function exportUsersToCsv(): Promise<{ csv?: string; error?: string
             return { error: "There are no users to export." };
         }
         const csv = Papa.unparse(users);
+        await writeLog({ level: 'AUDIT', actor: 'system', action: 'EXPORT_USERS', details: `Exported ${users.length} user records.` });
+        revalidatePath('/logs');
         return { csv };
     } catch (error: any) {
         console.error("Error exporting users to CSV:", error);
+        await writeLog({ level: 'ERROR', actor: 'system', action: 'EXPORT_FAILED', details: `User export failed: ${error.message}` });
+        revalidatePath('/logs');
         return { error: "An unexpected error occurred during export." };
     }
 }
@@ -525,10 +609,14 @@ export async function importUsersFromCsv(csvContent: string): Promise<{ imported
         }));
 
         await db.bulkUpsertUsersWithPasswords(usersToImport);
+        await writeLog({ level: 'AUDIT', actor: 'system', action: 'IMPORT_USERS', details: `Imported ${usersToImport.length} user records from CSV.` });
         revalidatePath('/users');
+        revalidatePath('/logs');
         return { importedCount: usersToImport.length };
     } catch (error: any) {
         console.error("Error importing users from CSV:", error);
+        await writeLog({ level: 'ERROR', actor: 'system', action: 'IMPORT_FAILED', details: `User import failed: ${error.message}` });
+        revalidatePath('/logs');
         return { error: `An unexpected error occurred during import: ${error.message}` };
     }
 }
@@ -579,9 +667,13 @@ export async function generateStatisticsReport(): Promise<{ csv?: string; error?
 
         const finalCsv = `STATISTICS SUMMARY\n${summaryCsv}\n\nRAW PUBLISHED DATA\n${rawDataCsv}`;
 
+        await writeLog({ level: 'INFO', actor: 'system', action: 'EXPORT_STATISTICS', details: `Generated statistics report.` });
+        revalidatePath('/logs');
         return { csv: finalCsv };
     } catch (error: any) {
         console.error("Error generating statistics report:", error);
+        await writeLog({ level: 'ERROR', actor: 'system', action: 'EXPORT_FAILED', details: `Statistics report generation failed: ${error.message}` });
+        revalidatePath('/logs');
         return { error: "An unexpected error occurred during report generation." };
     }
 }
@@ -603,9 +695,13 @@ export async function exportAllSettings(): Promise<{ settings?: string; error?: 
         };
 
         const jsonString = JSON.stringify(settingsToExport, null, 2);
+        await writeLog({ level: 'AUDIT', actor: 'system', action: 'EXPORT_SETTINGS', details: `Exported all application settings.` });
+        revalidatePath('/logs');
         return { settings: jsonString };
     } catch (error: any) {
         console.error("Error exporting settings:", error);
+        await writeLog({ level: 'ERROR', actor: 'system', action: 'EXPORT_FAILED', details: `Settings export failed: ${error.message}` });
+        revalidatePath('/logs');
         return { error: "An unexpected error occurred during export." };
     }
 }
@@ -636,14 +732,37 @@ export async function importAllSettings(settings: Partial<Database>): Promise<{ 
         
         await Promise.all(dbWrites);
         
+        await writeLog({ level: 'AUDIT', actor: 'system', action: 'IMPORT_SETTINGS', details: `Imported all application settings from a JSON file.` });
         revalidatePath('/settings');
         revalidatePath('/', 'layout');
+        revalidatePath('/logs');
 
         return { success: true };
     } catch (error: any) {
         console.error("Error importing settings:", error);
+        await writeLog({ level: 'ERROR', actor: 'system', action: 'IMPORT_FAILED', details: `Settings import failed: ${error.message}` });
+        revalidatePath('/logs');
         return { success: false, error: 'An unexpected error occurred during the import process.' };
     }
 }
 
-    
+export async function getLogs(): Promise<LogEntry[]> {
+    return db.getLogs();
+}
+
+export async function exportLogsToCsv(logs: LogEntry[]): Promise<{ csv?: string; error?: string }> {
+    try {
+        if (!logs || logs.length === 0) {
+            return { error: "There are no logs to export." };
+        }
+        const csv = Papa.unparse(logs);
+        await writeLog({ level: 'INFO', actor: 'system', action: 'EXPORT_LOGS', details: `Exported ${logs.length} log records.` });
+        revalidatePath('/logs');
+        return { csv };
+    } catch (error: any) {
+        console.error("Error exporting logs:", error);
+        await writeLog({ level: 'ERROR', actor: 'system', action: 'EXPORT_FAILED', details: `Log export failed: ${error.message}` });
+        revalidatePath('/logs');
+        return { error: "An unexpected error occurred during log export." };
+    }
+}

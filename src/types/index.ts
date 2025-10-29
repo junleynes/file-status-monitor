@@ -76,12 +76,22 @@ export type ChartData = {
     count: number;
 }
 
+export type LogEntry = {
+    id: string;
+    timestamp: string;
+    level: 'AUDIT' | 'INFO' | 'WARN' | 'ERROR';
+    actor: string; // "system" or a username
+    action: string;
+    details: string;
+};
+
 export type Database = {
     users: User[];
     branding: BrandingSettings;
     monitoredPaths: MonitoredPaths;
     monitoredExtensions: string[];
     fileStatuses: FileStatus[];
+    logs: LogEntry[];
     cleanupSettings: CleanupSettings;
     processingSettings: ProcessingSettings;
     failureRemark: string;
