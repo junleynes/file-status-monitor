@@ -6,7 +6,7 @@ import * as path from 'path';
 import Database from 'better-sqlite3';
 import type { Database as JsonDatabase, BrandingSettings, CleanupSettings, FileStatus, MonitoredPaths, ProcessingSettings, SmtpSettings, User, MaintenanceSettings, LogEntry } from '../types';
 
-const dbPath = path.resolve(process.cwd(), 'src/lib/database.sqlite');
+const dbPath = process.env.DATABASE_PATH || path.resolve(process.cwd(), 'src/lib/database.sqlite');
 const jsonDbPath = path.resolve(process.cwd(), 'src/lib/database.json');
 const jsonDbMigratedPath = path.resolve(process.cwd(), 'src/lib/database.json.migrated');
 
@@ -106,7 +106,7 @@ function migrateDataFromJson(db: Database.Database) {
 
 const getDb = (): Database.Database => {
     if (!dbInstance) {
-        console.log('[DB] Initializing new SQLite singleton connection...');
+        console.log(`[DB] Initializing new SQLite singleton connection to: ${dbPath}`);
         
         const db = new Database(dbPath);
         db.pragma('journal_mode = WAL');
