@@ -5,12 +5,12 @@ import { useEffect, useState, useMemo, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import type { LogEntry } from "@/types";
-import { Search, X, Download, ListFilter } from "lucide-react";
+import { Search, X, Download, ListFilter, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { getLogs, exportLogsToCsv } from "@/lib/actions";
+import { getLogs, exportLogsToCsv, clearAllLogs } from "@/lib/actions";
 import { LogsTable } from "@/components/logs-table";
 import {
   DropdownMenu,
@@ -20,6 +20,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const ALL_LEVELS = ["AUDIT", "INFO", "WARN", "ERROR"];
 
@@ -29,16 +39,18 @@ export default function LogsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [levelFilters, setLevelFilters] = useState<Set<string>>(new Set(ALL_LEVELS));
   const [isPending, startTransition] = useTransition();
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const { toast } = useToast();
 
+  const fetchLogs = async () => {
+    startTransition(async () => {
+      const fetchedLogs = await getLogs();
+      setLogs(fetchedLogs);
+    });
+  };
+
   useEffect(() => {
-    const fetchLogs = async () => {
-      startTransition(async () => {
-        const fetchedLogs = await getLogs();
-        setLogs(fetchedLogs);
-      });
-    };
     fetchLogs();
   }, []);
 
@@ -60,6 +72,18 @@ export default function LogsPage() {
       link.click();
       document.body.removeChild(link);
       toast({ title: "Export Successful", description: "The filtered logs have been downloaded." });
+    });
+  };
+
+  const handleClearLogs = () => {
+    startTransition(async () => {
+      await clearAllLogs();
+      await fetchLogs(); // Refetch logs
+      setIsDeleteDialogOpen(false);
+      toast({
+        title: "Logs Cleared",
+        description: "All audit log entries have been deleted.",
+      });
     });
   };
 
@@ -99,10 +123,18 @@ export default function LogsPage() {
             Review system and user activity across the application.
           </p>
         </div>
-         <Button onClick={handleExport} disabled={isPending || filteredLogs.length === 0}>
-            <Download className="mr-2 h-4 w-4" />
-            {isPending ? "Exporting..." : "Export to CSV"}
-        </Button>
+         <div className="flex flex-wrap gap-2">
+            <Button onClick={handleExport} disabled={isPending || filteredLogs.length === 0}>
+                <Download className="mr-2 h-4 w-4" />
+                {isPending ? "Exporting..." : "Export to CSV"}
+            </Button>
+            {user?.role === 'admin' && (
+                <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)} disabled={isPending}>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Clear All Logs
+                </Button>
+            )}
+         </div>
       </div>
 
       <Card>
@@ -161,6 +193,22 @@ export default function LogsPage() {
         </CardContent>
       </Card>
       
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete all audit log entries.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleClearLogs} disabled={isPending} className="bg-destructive hover:bg-destructive/90">
+              {isPending ? "Clearing..." : "Yes, delete all logs"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.div>
   );
 }

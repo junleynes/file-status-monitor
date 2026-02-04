@@ -509,7 +509,7 @@ export async function updateCleanupSettings(settings: CleanupSettings) {
 }
 
 export async function updateProcessingSettings(settings: ProcessingSettings) {
-    await writeLog({ level: 'AUDIT', actor: 'system', action: 'SETTINGS_UPDATE_PROCESSING', details: `File processing settings updated.` });
+    await writeLog({ level: 'AUDIT', actor: 'system', action: 'SETTINGS_UPDATE_PROCESSING', details: `File processing rules have been updated.` });
     await db.updateProcessingSettings(settings);
     revalidatePath('/settings');
     revalidatePath('/logs');
@@ -762,6 +762,12 @@ export async function importAllSettings(settings: Partial<Database>): Promise<{ 
 
 export async function getLogs(): Promise<LogEntry[]> {
     return db.getLogs();
+}
+
+export async function clearAllLogs() {
+    await db.deleteAllLogs();
+    await writeLog({ level: 'AUDIT', actor: 'system', action: 'LOGS_CLEARED', details: 'All audit logs were cleared.' });
+    revalidatePath('/logs');
 }
 
 export async function exportLogsToCsv(logs: LogEntry[]): Promise<{ csv?: string; error?: string }> {

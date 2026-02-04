@@ -367,6 +367,12 @@ export async function addLog(log: LogEntry): Promise<void> {
     stmt.run(log.id, log.timestamp, log.level, log.actor, log.action, log.details);
 }
 
+export async function deleteAllLogs(): Promise<void> {
+    const db = getDb();
+    const stmt = db.prepare('DELETE FROM logs');
+    stmt.run();
+}
+
 export async function deleteLogsByAge(maxAgeMs: number): Promise<number> {
     const db = getDb();
     const cutoffDate = new Date(Date.now() - maxAgeMs).toISOString();
