@@ -66,7 +66,34 @@ sudo systemctl enable file-status-monitor
 sudo systemctl start file-status-monitor
 ```
 
-### 5. Service Management Commands
+### 5. Configure Firewall (UFW)
+Allow port 3007 through the firewall:
+```bash
+sudo ufw allow 3007/tcp
+sudo ufw reload
+sudo ufw status
+```
+### 6. Configure Apache to Listen on Port 3007 (Optional)
+```bash
+sudo nano /etc/apache2/ports.conf
+```
+Add:
+```bash
+Listen 3007
+```
+
+Save and exit, then restart Apache:
+```bash
+sudo systemctl restart apache2
+```
+
+### 7. Accessing the Application
+Access the application using:
+```bash
+http://<SERVER_IP>:3007
+```
+
+### 8. Service Management Commands
 Check Service Status
 ```bash
 sudo systemctl status file-status-monitor
