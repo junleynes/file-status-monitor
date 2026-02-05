@@ -16,17 +16,20 @@
 ```bash
 cd /var/www
 sudo git clone https://github.com/junleynes/file-status-monitor.git
+```
 
 ### 2. Install Dependencies and Build
 ```bash
 cd /var/www/file-status-monitor
 sudo npm install
 sudo npm run build
+```
 
 ### 3. Create systemd Service File
 Create the service file at:
 ```bash
 sudo nano /etc/systemd/system/file-status-monitor.service
+```
 ```bash
 [Unit]
 Description=File Status Monitor Node App
@@ -48,31 +51,36 @@ Environment="DATABASE_PATH=/var/data/file-status-monitor/database.sqlite"
 
 [Install]
 WantedBy=multi-user.target
+```
 
 ### 4. Create Data Directory
 ```bash
 sudo mkdir -p /var/data/file-status-monitor
 sudo chown -R www-data:www-data /var/data/file-status-monitor
+```
 
 ### 4. Enable and Start the Service
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable file-status-monitor
 sudo systemctl start file-status-monitor
+```
 
-### Service Management Commands
+### 5. Service Management Commands
 Check Service Status
 ```bash
 sudo systemctl status file-status-monitor
+```
 
 Stop the Service
 ```bash
 sudo systemctl restart file-status-monitor
+```
 
 View Service Logs
 ```bash
 sudo journalctl -u file-status-monitor -f
-
+```
 
 
 
