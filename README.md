@@ -1,13 +1,3 @@
-
-**To download this as a file:**
-
-1. **Copy the entire text above** (all lines including the backticks)
-2. **Save it as `README.md`** on your computer
-
-**Alternatively, create it directly via command line:**
-
-**On Linux/Mac:**
-
 # File Status Monitor - Deployment Guide
 
 ## Prerequisites
@@ -99,4 +89,4 @@ sudo journalctl -u file-status-monitor -f
 - Automatic restart on failure (5-second delay)
 - Database path is configurable via the \`DATABASE_PATH\` environment variable
 - Make sure Node.js and npm are in the PATH or adjust the \`Environment=PATH\` setting in the service file
-
+EOF
