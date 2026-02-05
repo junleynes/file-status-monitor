@@ -6,8 +6,7 @@ import * as path from 'path';
 import Database from 'better-sqlite3';
 import type { Database as JsonDatabase, BrandingSettings, CleanupSettings, FileStatus, MonitoredPaths, SmtpSettings, User, MaintenanceSettings, LogEntry } from '../types';
 
-const projectRootDataDir = path.resolve(process.cwd(), 'data');
-const defaultDbPath = path.resolve(projectRootDataDir, 'database.sqlite');
+const defaultDbPath = '/var/data/file-status-monitor/database.sqlite';
 const dbPath = process.env.DATABASE_PATH || defaultDbPath;
 const jsonDbPath = path.resolve(process.cwd(), 'src/lib/database.json');
 const jsonDbMigratedPath = path.resolve(process.cwd(), 'src/lib/database.json.migrated');
