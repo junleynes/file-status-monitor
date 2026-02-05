@@ -384,7 +384,7 @@ export async function getBranding(): Promise<BrandingSettings> {
         brandName: 'File Status Monitor',
         logo: null,
         favicon: null,
-        footerText: '© 2024 File Status Monitor'
+        footerText: '© 2026 File Status Monitor'
     });
 }
 export async function updateBranding(settings: BrandingSettings): Promise<void> {
