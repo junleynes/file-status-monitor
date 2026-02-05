@@ -4,7 +4,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import Database from 'better-sqlite3';
-import type { Database as JsonDatabase, BrandingSettings, CleanupSettings, FileStatus, MonitoredPaths, ProcessingSettings, SmtpSettings, User, MaintenanceSettings, LogEntry } from '../types';
+import type { Database as JsonDatabase, BrandingSettings, CleanupSettings, FileStatus, MonitoredPaths, SmtpSettings, User, MaintenanceSettings, LogEntry } from '../types';
 
 const projectRootDataDir = path.resolve(process.cwd(), 'data');
 const defaultDbPath = path.resolve(projectRootDataDir, 'database.sqlite');
@@ -40,7 +40,7 @@ function migrateDataFromJson(db: Database.Database) {
             db.exec('DELETE FROM logs');
 
             // Users
-            const insertUser = db.prepare('INSERT OR REPLACE INTO users (id, username, name, email, role, password, avatar, twoFactorRequired, twoFactorSecret, lastLogin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            const insertUser = db.prepare('INSERT OR REPLACE INTO users (id, username, name, email, role, password, avatar, lastLogin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
             jsonData.users.forEach(user => {
                 insertUser.run(
                     user.id,
@@ -50,8 +50,6 @@ function migrateDataFromJson(db: Database.Database) {
                     user.role,
                     user.password || null,
                     user.avatar || null,
-                    user.twoFactorRequired ? 1 : 0,
-                    user.twoFactorSecret || null,
                     user.lastLogin || null
                 );
             });
@@ -63,7 +61,10 @@ function migrateDataFromJson(db: Database.Database) {
             insertSetting.run('monitoredPaths', JSON.stringify(jsonData.monitoredPaths));
             insertSetting.run('monitoredExtensions', JSON.stringify(jsonData.monitoredExtensions));
             insertSetting.run('cleanupSettings', JSON.stringify(jsonData.cleanupSettings));
-            insertSetting.run('processingSettings', JSON.stringify(jsonData.processingSettings));
+            if ('processingSettings' in jsonData) {
+                // This key is deprecated but we handle it for migration
+                 insertSetting.run('processingSettings', JSON.stringify((jsonData as any).processingSettings));
+            }
             insertSetting.run('failureRemark', JSON.stringify(jsonData.failureRemark));
             insertSetting.run('smtpSettings', JSON.stringify(jsonData.smtpSettings));
             insertSetting.run('maintenanceSettings', JSON.stringify(jsonData.maintenanceSettings));
@@ -134,8 +135,6 @@ const getDb = (): Database.Database => {
                 role TEXT NOT NULL,
                 password TEXT,
                 avatar TEXT,
-                twoFactorRequired INTEGER DEFAULT 0,
-                twoFactorSecret TEXT,
                 lastLogin TEXT
             );
 
@@ -170,7 +169,6 @@ const getDb = (): Database.Database => {
         
         dbInstance = db;
         
-        // Simple migration to add lastLogin column if it doesn't exist
         try {
             const tableInfo: any[] = dbInstance.prepare("PRAGMA table_info(users)").all();
             const hasLastLogin = tableInfo.some((col: any) => col.name === 'lastLogin');
@@ -209,31 +207,30 @@ export async function getUsers(): Promise<User[]> {
     const db = getDb();
     const stmt = db.prepare('SELECT * FROM users');
     const rows = stmt.all() as any[];
-    return rows.map(row => ({ ...row, twoFactorRequired: !!row.twoFactorRequired })) as User[];
+    return rows.map(row => ({ ...row })) as User[];
 }
 
 export async function getUserById(id: string): Promise<User | null> {
     const db = getDb();
     const stmt = db.prepare('SELECT * FROM users WHERE id = ?');
     const row = stmt.get(id) as any;
-    return row ? { ...row, twoFactorRequired: !!row.twoFactorRequired } as User : null;
+    return row ? { ...row } as User : null;
 }
 
 export async function getUserByUsername(username: string): Promise<User | null> {
     const db = getDb();
     const stmt = db.prepare('SELECT * FROM users WHERE username = ?');
     const row = stmt.get(username) as any;
-    return row ? { ...row, twoFactorRequired: !!row.twoFactorRequired } as User : null;
+    return row ? { ...row } as User : null;
 }
 
 export async function addUser(user: User): Promise<{ success: boolean }> {
     const db = getDb();
     try {
-        const stmt = db.prepare('INSERT INTO users (id, username, name, email, role, password, avatar, twoFactorRequired, twoFactorSecret) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        const stmt = db.prepare('INSERT INTO users (id, username, name, email, role, password, avatar) VALUES (?, ?, ?, ?, ?, ?, ?)');
         stmt.run(
             user.id, user.username, user.name, user.email || null, user.role, 
-            user.password || null, user.avatar || null, 
-            user.twoFactorRequired ? 1 : 0, user.twoFactorSecret || null
+            user.password || null, user.avatar || null
         );
         return { success: true };
     } catch (error: any) {
@@ -246,22 +243,21 @@ export async function addUser(user: User): Promise<{ success: boolean }> {
 
 export async function updateUser(user: User): Promise<void> {
     const db = getDb();
-    const stmt = db.prepare('UPDATE users SET username = ?, name = ?, email = ?, role = ?, password = ?, avatar = ?, twoFactorRequired = ?, twoFactorSecret = ?, lastLogin = ? WHERE id = ?');
+    const stmt = db.prepare('UPDATE users SET username = ?, name = ?, email = ?, role = ?, password = ?, avatar = ?, lastLogin = ? WHERE id = ?');
     stmt.run(
         user.username, user.name, user.email || null, user.role, 
-        user.password, user.avatar || null, user.twoFactorRequired ? 1 : 0, 
-        user.twoFactorSecret || null, user.lastLogin || null, user.id
+        user.password, user.avatar || null, user.lastLogin || null, user.id
     );
 }
 
 export async function bulkUpsertUsers(users: User[]): Promise<void> {
     const db = getDb();
-    const stmt = db.prepare('INSERT OR REPLACE INTO users (id, username, name, email, role, avatar, twoFactorRequired, twoFactorSecret, lastLogin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const stmt = db.prepare('INSERT OR REPLACE INTO users (id, username, name, email, role, avatar, lastLogin) VALUES (?, ?, ?, ?, ?, ?, ?)');
     const transaction = db.transaction((usersToInsert: User[]) => {
         for (const user of usersToInsert) {
              stmt.run(
                 user.id, user.username, user.name, user.email || null, user.role, 
-                user.avatar || null, user.twoFactorRequired ? 1 : 0, user.twoFactorSecret || null, user.lastLogin || null
+                user.avatar || null, user.lastLogin || null
             );
         }
     });
@@ -270,13 +266,12 @@ export async function bulkUpsertUsers(users: User[]): Promise<void> {
 
 export async function bulkUpsertUsersWithPasswords(users: User[]): Promise<void> {
     const db = getDb();
-    const stmt = db.prepare('INSERT OR REPLACE INTO users (id, username, name, email, role, password, avatar, twoFactorRequired, twoFactorSecret, lastLogin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const stmt = db.prepare('INSERT OR REPLACE INTO users (id, username, name, email, role, password, avatar, lastLogin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     const transaction = db.transaction((usersToInsert: User[]) => {
         for (const user of usersToInsert) {
              stmt.run(
                 user.id, user.username, user.name, user.email || null, user.role, 
-                user.password, user.avatar || null, user.twoFactorRequired ? 1 : 0, 
-                user.twoFactorSecret || null, user.lastLogin || null
+                user.password, user.avatar || null, user.lastLogin || null
             );
         }
     });
@@ -373,6 +368,7 @@ export async function deleteAllLogs(): Promise<void> {
     stmt.run();
 }
 
+
 export async function deleteLogsByAge(maxAgeMs: number): Promise<number> {
     const db = getDb();
     const cutoffDate = new Date(Date.now() - maxAgeMs).toISOString();
@@ -385,10 +381,10 @@ export async function deleteLogsByAge(maxAgeMs: number): Promise<number> {
 // --- SETTINGS ---
 export async function getBranding(): Promise<BrandingSettings> {
     return getSetting<BrandingSettings>('branding', {
-        brandName: 'Publish Lookout',
+        brandName: 'File Status Monitor',
         logo: null,
         favicon: null,
-        footerText: '© 2024 Publish Lookout'
+        footerText: '© 2024 File Status Monitor'
     });
 }
 export async function updateBranding(settings: BrandingSettings): Promise<void> {
@@ -421,16 +417,6 @@ export async function getCleanupSettings(): Promise<CleanupSettings> {
 }
 export async function updateCleanupSettings(settings: CleanupSettings): Promise<void> {
     return updateSetting('cleanupSettings', settings);
-}
-
-export async function getProcessingSettings(): Promise<ProcessingSettings> {
-    return getSetting<ProcessingSettings>('processingSettings', {
-        autoTrimInvalidChars: false,
-        autoExpandPrefixes: false,
-    });
-}
-export async function updateProcessingSettings(settings: ProcessingSettings): Promise<void> {
-    return updateSetting('processingSettings', settings);
 }
 
 export async function getFailureRemark(): Promise<string> {
@@ -473,7 +459,6 @@ export async function readDb(): Promise<JsonDatabase> {
         fileStatuses,
         logs,
         cleanupSettings,
-        processingSettings,
         failureRemark,
         smtpSettings,
         maintenanceSettings,
@@ -485,7 +470,6 @@ export async function readDb(): Promise<JsonDatabase> {
         getFileStatuses(),
         getLogs(),
         getCleanupSettings(),
-        getProcessingSettings(),
         getFailureRemark(),
         getSmtpSettings(),
         getMaintenanceSettings(),
@@ -498,11 +482,8 @@ export async function readDb(): Promise<JsonDatabase> {
         fileStatuses,
         logs,
         cleanupSettings,
-        processingSettings,
         failureRemark,
         smtpSettings,
         maintenanceSettings,
     };
 }
-
-    

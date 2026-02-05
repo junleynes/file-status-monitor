@@ -9,7 +9,7 @@ import { useBranding } from "@/hooks/use-branding";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { MonitoredPath, MonitoredPaths, CleanupSettings, SmtpSettings, ProcessingSettings, Database, MaintenanceSettings } from "@/types";
+import type { MonitoredPath, MonitoredPaths, CleanupSettings, SmtpSettings, Database, MaintenanceSettings } from "@/types";
 import { UploadCloud, XCircle, Clock, Save, Network, Info, FileImage, Upload, Download, Send, Construction } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
@@ -33,12 +33,11 @@ import {
     updateFailureRemark,
     updateSmtpSettings,
     testSmtpConnection,
-    updateProcessingSettings,
     exportAllSettings,
     importAllSettings,
     updateMaintenanceSettings,
 } from "@/lib/actions";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { BrandLogo } from "@/components/brand-logo";
 import { AnimatePresence, motion } from "framer-motion";
 import { PlusCircle, Trash2, Edit, Check } from "lucide-react";
@@ -65,11 +64,6 @@ const defaultSmtpSettings: SmtpSettings = {
         user: '',
         pass: ''
     }
-};
-
-const defaultProcessingSettings: ProcessingSettings = {
-    autoTrimInvalidChars: false,
-    autoExpandPrefixes: false,
 };
 
 const defaultMaintenanceSettings: MaintenanceSettings = {
@@ -102,8 +96,6 @@ export default function SettingsPage() {
   
   const [smtpSettings, setSmtpSettings] = useState<SmtpSettings>(defaultSmtpSettings);
   
-  const [processingSettings, setProcessingSettings] = useState<ProcessingSettings>(defaultProcessingSettings);
-
   const [maintenanceSettings, setMaintenanceSettings] = useState<MaintenanceSettings>(defaultMaintenanceSettings);
 
   const [isSettingsImportDialogOpen, setIsSettingsImportDialogOpen] = useState(false);
@@ -140,7 +132,6 @@ export default function SettingsPage() {
         setFailureRemark(fullDb.failureRemark || '');
         setInitialFailureRemark(fullDb.failureRemark || '');
         setSmtpSettings(fullDb.smtpSettings || defaultSmtpSettings);
-        setProcessingSettings(fullDb.processingSettings || defaultProcessingSettings);
         setMaintenanceSettings(fullDb.maintenanceSettings || defaultMaintenanceSettings);
     }
     fetchData();
@@ -346,15 +337,6 @@ export default function SettingsPage() {
     });
   }
   
-  const handleProcessingSettingsChange = (field: keyof ProcessingSettings, value: boolean) => {
-    startTransition(async () => {
-        const newSettings = { ...processingSettings, [field]: value };
-        await updateProcessingSettings(newSettings);
-        setProcessingSettings(newSettings);
-        toast({ title: "Processing Settings Saved", description: "Your file processing rules have been updated." });
-    });
-  }
-
   const handleMaintenanceSettingsChange = <K extends keyof MaintenanceSettings>(
     field: K,
     value: MaintenanceSettings[K]
@@ -382,7 +364,6 @@ export default function SettingsPage() {
       const blob = new Blob([settings!], { type: 'application/json;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
       const date = new Date().toISOString().slice(0, 10);
       link.setAttribute('download', `settings-backup-${date}.json`);
       link.style.visibility = 'hidden';
@@ -576,39 +557,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
       
-      <Card>
-        <CardHeader>
-          <CardTitle>File Processing</CardTitle>
-          <CardDescription>Configure automated rules for how files are handled.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-            <div className="flex flex-row items-start space-x-4 rounded-lg border p-4">
-                <Switch
-                    id="auto-trim-chars"
-                    checked={processingSettings.autoTrimInvalidChars}
-                    onCheckedChange={(checked) => handleProcessingSettingsChange('autoTrimInvalidChars', checked)}
-                    disabled={isPending}
-                />
-                <div className="flex-1 space-y-1">
-                    <Label htmlFor="auto-trim-chars">Auto-fix invalid filenames</Label>
-                    <p className="text-xs text-muted-foreground">When a file fails, automatically remove invalid characters and extra spaces from its filename, then move it to `import` to be retried.</p>
-                </div>
-            </div>
-             <div className="flex flex-row items-start space-x-4 rounded-lg border p-4">
-                <Switch
-                    id="auto-expand-prefixes"
-                    checked={processingSettings.autoExpandPrefixes}
-                    onCheckedChange={(checked) => handleProcessingSettingsChange('autoExpandPrefixes', checked)}
-                    disabled={isPending}
-                />
-                <div className="flex-1 space-y-1">
-                    <Label htmlFor="auto-expand-prefixes">Automatically Expand Filename Prefixes</Label>
-                    <p className="text-xs text-muted-foreground">When a file with multiple prefixes fails (e.g., `P1B2_...`), automatically create a copy for each prefix in the `import` folder.</p>
-                </div>
-            </div>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader>
           <CardTitle>Failure Reason Management</CardTitle>
@@ -925,7 +873,7 @@ export default function SettingsPage() {
                   </div>
                   {settingsImportError && (
                       <Alert variant="destructive">
-                          <AlertTitle>Error</AlertTitle>
+                          <DialogTitle>Error</DialogTitle>
                           <AlertDescription>{settingsImportError}</AlertDescription>
                       </Alert>
                   )}

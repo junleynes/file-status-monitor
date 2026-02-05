@@ -7,8 +7,6 @@ export type User = {
   role: 'admin' | 'user';
   password?: string;
   avatar?: string | null;
-  twoFactorRequired?: boolean;
-  twoFactorSecret?: string | null;
   lastLogin?: string | null;
 };
 
@@ -43,11 +41,6 @@ export type CleanupSettings = {
   status: CleanupRule;
   files: CleanupRule;
   timeout: CleanupRule;
-}
-
-export type ProcessingSettings = {
-  autoTrimInvalidChars: boolean;
-  autoExpandPrefixes: boolean;
 }
 
 export type BrandingSettings = {
@@ -94,7 +87,6 @@ export type Database = {
     fileStatuses: FileStatus[];
     logs: LogEntry[];
     cleanupSettings: CleanupSettings;
-    processingSettings: ProcessingSettings;
     failureRemark: string;
     smtpSettings: SmtpSettings;
     maintenanceSettings: MaintenanceSettings;

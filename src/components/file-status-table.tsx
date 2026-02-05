@@ -1,7 +1,6 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
 import {
   Table,
   TableBody,
@@ -11,18 +10,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import type { FileStatus, User, ProcessingSettings } from "@/types";
+import type { FileStatus, User } from "@/types";
 import { format } from "date-fns";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "./ui/button";
-import { RefreshCw, FilePenLine, Trash2, GitBranchPlus } from "lucide-react";
+import { RefreshCw, FilePenLine, Trash2 } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { getProcessingSettings } from "@/lib/db";
 
 
 interface FileStatusTableProps {
@@ -30,21 +28,11 @@ interface FileStatusTableProps {
   onRetry: (file: FileStatus) => void;
   onRename: (file: FileStatus) => void;
   onDelete: (file: FileStatus) => void;
-  onExpand: (file: FileStatus) => void;
   isReadOnly?: boolean;
   userRole?: User['role'];
 }
 
-export function FileStatusTable({ files, onRetry, onRename, onDelete, onExpand, isReadOnly = false, userRole }: FileStatusTableProps) {
-  const [processingSettings, setProcessingSettings] = useState<ProcessingSettings | null>(null);
-
-  useEffect(() => {
-    async function fetchSettings() {
-        const settings = await getProcessingSettings();
-        setProcessingSettings(settings);
-    }
-    fetchSettings();
-  }, []);
+export function FileStatusTable({ files, onRetry, onRename, onDelete, isReadOnly = false, userRole }: FileStatusTableProps) {
 
   const getStatusClasses = (status: FileStatus['status']): string => {
     switch (status) {
@@ -68,23 +56,6 @@ export function FileStatusTable({ files, onRetry, onRename, onDelete, onExpand, 
       return "Invalid date";
     }
   };
-
-  const isExpandable = (fileName: string): boolean => {
-    const name = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
-    const parts = name.split('_');
-    if (parts.length !== 4) return false;
-    const prefixPairs = parts[0];
-    if (prefixPairs.length < 4 || prefixPairs.length % 2 !== 0) return false;
-
-    let validPrefixCount = 0;
-    for (let i = 0; i < prefixPairs.length; i += 2) {
-      if (['P', 'B', 'C'].includes(prefixPairs[i].toUpperCase())) {
-        validPrefixCount++;
-      }
-    }
-    return validPrefixCount > 1;
-  };
-
 
   return (
     <TooltipProvider>
@@ -136,18 +107,6 @@ export function FileStatusTable({ files, onRetry, onRename, onDelete, onExpand, 
                     <TableCell className="text-right">
                       {file.status === 'failed' && (
                         <div className="flex gap-1 justify-end">
-                          {isExpandable(file.name) && !processingSettings?.autoExpandPrefixes && (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => onExpand(file)} disabled={isReadOnly}>
-                                    <GitBranchPlus className="h-4 w-4" />
-                                </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                <p>Expand Prefixes</p>
-                                </TooltipContent>
-                            </Tooltip>
-                          )}
                            <Tooltip>
                             <TooltipTrigger asChild>
                                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => onRename(file)} disabled={isReadOnly}>

@@ -3,11 +3,9 @@
 
 import { revalidatePath } from 'next/cache';
 import * as db from './db';
-import type { BrandingSettings, CleanupSettings, MonitoredPaths, User, FileStatus, MonitoredPath, SmtpSettings, ProcessingSettings, ChartData, Database, MaintenanceSettings, LogEntry } from '../types';
+import type { BrandingSettings, CleanupSettings, MonitoredPaths, User, FileStatus, MonitoredPath, SmtpSettings, Database, MaintenanceSettings, LogEntry } from '../types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { authenticator } from 'otplib';
-import qrcode from 'qrcode';
 import nodemailer from 'nodemailer';
 import Papa from 'papaparse';
 import { format, parseISO, startOfWeek, startOfMonth } from 'date-fns';
@@ -41,67 +39,6 @@ export async function validateUserCredentials(username: string, password: string
   await writeLog({ level: 'WARN', actor: 'system', action: 'USER_LOGIN_FAILED', details: `Failed login attempt for username: '${username}'.` });
   return { success: false };
 }
-
-
-export async function generateTwoFactorSecretForUser(userId: string, username: string, issuer: string) {
-  let user = await db.getUserById(userId);
-  if (!user) {
-    throw new Error('User not found');
-  }
-
-  // Only generate a new secret if one doesn't already exist.
-  if (!user.twoFactorSecret) {
-    const secret = authenticator.generateSecret();
-    user.twoFactorSecret = secret;
-    await db.updateUser(user);
-    await writeLog({ level: 'AUDIT', actor: username, action: '2FA_SECRET_GENERATED', details: `Generated new 2FA secret for user '${username}'.` });
-    revalidatePath('/users');
-  }
-  
-  const otpauth = authenticator.keyuri(username, issuer, user.twoFactorSecret!);
-  const qrCodeDataUrl = await qrcode.toDataURL(otpauth);
-
-  return { qrCodeDataUrl };
-}
-
-export async function enableTwoFactor(userId: string) {
-    let user = await db.getUserById(userId);
-    if (!user) {
-        throw new Error('User not found');
-    }
-
-    user.twoFactorRequired = true;
-    await db.updateUser(user);
-    await writeLog({ level: 'AUDIT', actor: 'system', action: '2FA_ENABLED', details: `2FA requirement enabled for user '${user.username}'.` });
-    revalidatePath('/users');
-}
-
-export async function disableTwoFactor(userId: string) {
-    let user = await db.getUserById(userId);
-    if (!user) {
-        throw new Error('User not found');
-    }
-
-    user.twoFactorRequired = false;
-    user.twoFactorSecret = null; // Clear the secret when disabling
-    await db.updateUser(user);
-    await writeLog({ level: 'AUDIT', actor: 'system', action: '2FA_DISABLED', details: `2FA disabled for user '${user.username}'.` });
-    revalidatePath('/users');
-}
-
-
-export async function verifyTwoFactorToken(userId: string, token: string) {
-  const user = await db.getUserById(userId);
-  if (!user || !user.twoFactorSecret) {
-    return false;
-  }
-  const isValid = authenticator.verify({ token, secret: user.twoFactorSecret });
-  if (!isValid) {
-    await writeLog({ level: 'WARN', actor: user.username, action: '2FA_VERIFICATION_FAILED', details: `User '${user.username}' submitted an invalid 2FA token.` });
-  }
-  return isValid;
-}
-
 
 export async function checkWriteAccess(): Promise<{ canWrite: boolean; error?: string }> {
   const { import: importPath, failed: failedPath } = await db.getMonitoredPaths();
@@ -260,84 +197,6 @@ export async function deleteFailedFile(fileName: string): Promise<{ success: boo
         }
         return { success: false, error: `An unexpected error occurred: ${error.message}` };
     }
-}
-
-export async function expandFilePrefixes(fileName: string, username: string): Promise<{ success: boolean; count?: number; error?: string }> {
-    const { import: importPath, failed: failedPath } = await db.getMonitoredPaths();
-    const originalFilePath = path.join(failedPath.path, fileName);
-    const fileExt = path.extname(fileName);
-    const baseName = path.basename(fileName, fileExt);
-    
-    try {
-        await fs.access(originalFilePath);
-    } catch {
-        return { success: false, error: `File not found in failed directory: ${fileName}` };
-    }
-
-    const parts = baseName.split('_');
-    if (parts.length !== 4) {
-        return { success: false, error: 'Filename does not match the required format for expansion.' };
-    }
-
-    const prefixPairsStr = parts[0];
-    const validPairs: string[] = [];
-    if (prefixPairsStr.length > 0 && prefixPairsStr.length % 2 === 0) {
-        for (let i = 0; i < prefixPairsStr.length; i += 2) {
-            if (['P', 'B', 'C'].includes(prefixPairsStr[i].toUpperCase())) {
-                validPairs.push(prefixPairsStr.substring(i, i + 2));
-            }
-        }
-    }
-
-    if (validPairs.length <= 1) {
-        return { success: false, error: 'File does not contain multiple valid prefixes to expand.' };
-    }
-
-    let allCopiesSucceeded = true;
-    const newFilesToUpsert: FileStatus[] = [];
-
-    for (const pair of validPairs) {
-        const newFileName = `${pair}_${parts[1]}_${parts[2]}_${parts[3]}${fileExt}`;
-        const newFilePath = path.join(importPath.path, newFileName);
-        try {
-            await fs.copyFile(originalFilePath, newFilePath);
-            newFilesToUpsert.push({
-                id: `file-${Date.now()}-${Math.random()}`,
-                name: newFileName,
-                status: 'processing',
-                source: importPath.name,
-                lastUpdated: new Date().toISOString(),
-                remarks: `Expanded from ${fileName}. [user: ${username}]`
-            });
-        } catch (copyError) {
-            console.error(`[Action] ERROR: Failed to create copy "${newFileName}":`, copyError);
-            allCopiesSucceeded = false;
-            // Attempt to clean up already created files
-            for (const fileToClean of newFilesToUpsert) {
-                try { await fs.unlink(path.join(importPath.path, fileToClean.name)); } catch {}
-            }
-            return { success: false, error: `Failed to create copy: ${newFileName}. Expansion aborted.` };
-        }
-    }
-
-    if (allCopiesSucceeded) {
-        try {
-            await fs.unlink(originalFilePath);
-            await db.deleteFileStatus(fileName);
-            await db.bulkUpsertFileStatuses(newFilesToUpsert);
-            await writeLog({ level: 'AUDIT', actor: username, action: 'FILE_EXPAND', details: `File '${fileName}' was expanded into ${validPairs.length} new files.` });
-            revalidatePath('/dashboard');
-            revalidatePath('/logs');
-            return { success: true, count: validPairs.length };
-        } catch (deleteError) {
-            console.error(`[Action] ERROR: Failed to delete original expanded file "${fileName}":`, deleteError);
-             await writeLog({ level: 'ERROR', actor: username, action: 'FILE_EXPAND_FAILED', details: `Failed to delete original file '${fileName}' after expansion. Error: ${deleteError}` });
-             revalidatePath('/logs');
-            return { success: false, error: `Failed to delete original file after expansion.` };
-        }
-    }
-
-    return { success: false, error: 'An unknown error occurred during expansion.' };
 }
 
 export async function updateBrandingSettings(settings: BrandingSettings) {
@@ -508,13 +367,6 @@ export async function updateCleanupSettings(settings: CleanupSettings) {
     revalidatePath('/logs');
 }
 
-export async function updateProcessingSettings(settings: ProcessingSettings) {
-    await writeLog({ level: 'AUDIT', actor: 'system', action: 'SETTINGS_UPDATE_PROCESSING', details: `File processing rules have been updated.` });
-    await db.updateProcessingSettings(settings);
-    revalidatePath('/settings');
-    revalidatePath('/logs');
-}
-
 export async function updateMaintenanceSettings(settings: MaintenanceSettings) {
     const action = settings.enabled ? 'MAINTENANCE_MODE_ENABLED' : 'MAINTENANCE_MODE_DISABLED';
     const details = `Maintenance mode was ${settings.enabled ? 'enabled' : 'disabled'}.`;
@@ -618,8 +470,6 @@ export async function importUsersFromCsv(csvContent: string): Promise<{ imported
             ...user,
             email: user.email || '',
             avatar: user.avatar || null,
-            twoFactorRequired: user.twoFactorRequired === true || user.twoFactorRequired === "true" || user.twoFactorRequired === "1",
-            twoFactorSecret: user.twoFactorSecret || null,
         }));
 
         await db.bulkUpsertUsersWithPasswords(usersToImport);
@@ -702,7 +552,6 @@ export async function exportAllSettings(): Promise<{ settings?: string; error?: 
             monitoredPaths: fullDb.monitoredPaths,
             monitoredExtensions: fullDb.monitoredExtensions,
             cleanupSettings: fullDb.cleanupSettings,
-            processingSettings: fullDb.processingSettings,
             failureRemark: fullDb.failureRemark,
             smtpSettings: fullDb.smtpSettings,
             maintenanceSettings: fullDb.maintenanceSettings,
@@ -738,7 +587,6 @@ export async function importAllSettings(settings: Partial<Database>): Promise<{ 
         if (settings.monitoredPaths) dbWrites.push(db.updateMonitoredPaths(settings.monitoredPaths));
         if (settings.monitoredExtensions) dbWrites.push(db.updateMonitoredExtensions(settings.monitoredExtensions));
         if (settings.cleanupSettings) dbWrites.push(db.updateCleanupSettings(settings.cleanupSettings));
-        if (settings.processingSettings) dbWrites.push(db.updateProcessingSettings(settings.processingSettings));
         if (settings.failureRemark) dbWrites.push(db.updateFailureRemark(settings.failureRemark));
         if (settings.smtpSettings) dbWrites.push(db.updateSmtpSettings(settings.smtpSettings));
         if (settings.maintenanceSettings) dbWrites.push(db.updateMaintenanceSettings(settings.maintenanceSettings));

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { User } from "@/types";
-import { KeyRound, UserPlus, Users, Trash2, ShieldCheck, ShieldOff, Pencil, Mail, MessageSquareWarning, Upload, Download, AlertTriangle, Clock } from "lucide-react";
+import { KeyRound, UserPlus, Users, Trash2, Pencil, Mail, MessageSquareWarning, Upload, Download, AlertTriangle, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { AnimatePresence, motion } from "framer-motion";
 import { Label } from "@/components/ui/label";
@@ -22,8 +22,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { 
-    enableTwoFactor,
-    disableTwoFactor,
     sendPasswordResetEmail,
     resetUserPasswordByAdmin,
     exportUsersToCsv,
@@ -207,22 +205,6 @@ export default function UsersPage() {
             setEditingUser(null);
         });
     };
-  
-  const handleEnableTwoFactor = async (userId: string) => {
-    startTransition(async () => {
-        await enableTwoFactor(userId);
-        await refreshUsers();
-        toast({ title: "2FA Enabled", description: "User will be prompted to set up 2FA on their next login." });
-    });
-  };
-
-  const handleDisableTwoFactor = async (userId: string) => {
-    startTransition(async () => {
-        await disableTwoFactor(userId);
-        await refreshUsers();
-        toast({ title: "2FA Disabled", description: "Two-factor authentication has been disabled for this user." });
-    });
-  };
   
   const handleExport = () => {
     startTransition(async () => {
@@ -444,17 +426,6 @@ export default function UsersPage() {
                                         <Pencil className="mr-2 h-4 w-4" />
                                         <span className="hidden sm:inline">Edit</span>
                                     </Button>
-                                    {u.twoFactorRequired ? (
-                                        <Button variant="outline" size="sm" onClick={() => handleDisableTwoFactor(u.id)} disabled={isPending}>
-                                            <ShieldOff className="mr-2 h-4 w-4 text-destructive" />
-                                            <span className="hidden sm:inline">Disable 2FA</span>
-                                        </Button>
-                                    ) : (
-                                        <Button variant="outline" size="sm" onClick={() => handleEnableTwoFactor(u.id)} disabled={isPending}>
-                                            <ShieldCheck className="mr-2 h-4 w-4 text-green-600" />
-                                            <span className="hidden sm:inline">Enable 2FA</span>
-                                        </Button>
-                                    )}
                                     <Button variant="outline" size="sm" onClick={() => handleOpenResetDialog(u)} disabled={isPending}>
                                         <KeyRound className="mr-2 h-4 w-4" />
                                         <span className="hidden sm:inline">Reset Password</span>

@@ -14,8 +14,7 @@ interface AuthContextType {
   user: User | null;
   users: User[];
   loading: boolean;
-  login: (username: string, password: string) => Promise<{ success: boolean; twoFactorRequired: boolean; requiresTwoFactorSetup: boolean; user?: User }>;
-  completeTwoFactorLogin: (userId: string, token: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<{ success: boolean; user?: User }>;
   logout: () => void;
   addUser: (user: User) => Promise<{success: boolean, message?: string}>;
   removeUser: (userId: string) => Promise<void>;
@@ -67,47 +66,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkUser();
   }, [refreshUsers]);
 
-  const login = async (username: string, password: string): Promise<{ success: boolean; twoFactorRequired: boolean; requiresTwoFactorSetup: boolean; user?: User }> => {
+  const login = async (username: string, password: string): Promise<{ success: boolean; user?: User }> => {
     const result = await actions.validateUserCredentials(username, password);
     
     if (result.success && result.user) {
       const userToLogin = result.user;
-      
       await db.updateUserLastLogin(userToLogin.id);
       
-      if (userToLogin.twoFactorRequired) {
-        const requiresSetup = !userToLogin.twoFactorSecret;
-        return { success: true, twoFactorRequired: true, requiresTwoFactorSetup: requiresSetup, user: userToLogin };
-      } else {
-        const { password: _, ...userToStore } = userToLogin;
-        userToStore.lastLogin = new Date().toISOString();
-        localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(userToStore));
-        setUser(userToStore);
-        await refreshUsers();
-        return { success: true, twoFactorRequired: false, requiresTwoFactorSetup: false, user: userToLogin };
-      }
+      const { password: _, ...userToStore } = userToLogin;
+      userToStore.lastLogin = new Date().toISOString();
+      localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(userToStore));
+      setUser(userToStore);
+      await refreshUsers();
     }
-    return { success: false, twoFactorRequired: false, requiresTwoFactorSetup: false };
+    return result;
   };
   
-  const completeTwoFactorLogin = async (userId: string, token: string): Promise<boolean> => {
-    const isValid = await actions.verifyTwoFactorToken(userId, token);
-    if (isValid) {
-      const userToLogin = await db.getUserById(userId);
-      if (userToLogin) {
-        await db.updateUserLastLogin(userToLogin.id);
-        const { password: _, ...userToStore } = userToLogin;
-        userToStore.lastLogin = new Date().toISOString();
-        localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(userToStore));
-        setUser(userToStore);
-        await writeLog({level: 'AUDIT', actor: userToLogin.username, action: 'USER_LOGIN_2FA_SUCCESS', details: `User '${userToLogin.username}' completed 2FA login.`});
-        await refreshUsers();
-        return true;
-      }
-    }
-    return false;
-  };
-
   const logout = () => {
     if(user) {
         writeLog({level: 'AUDIT', actor: user.username, action: 'USER_LOGOUT', details: `User '${user.username}' logged out.`});
@@ -152,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const value = { user, users, loading, login, completeTwoFactorLogin, logout, addUser, removeUser, updateOwnPassword, updateUser, refreshUsers, refreshCurrentUser };
+  const value = { user, users, loading, login, logout, addUser, removeUser, updateOwnPassword, updateUser, refreshUsers, refreshCurrentUser };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
