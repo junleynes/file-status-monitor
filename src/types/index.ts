@@ -13,7 +13,7 @@ export type User = {
 export type FileStatus = {
   id: string;
   name: string;
-  status: 'processing' | 'failed' | 'published' | 'timed-out';
+  status: 'processing' | 'failed' | 'processed' | 'timed-out';
   source: string;
   lastUpdated: string;
   remarks?: string;

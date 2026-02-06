@@ -304,11 +304,11 @@ export default function DashboardPage() {
           </Card>
           <Card className="bg-green-500/20 dark:bg-green-500/10 border-green-500 text-green-900 dark:text-green-200">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 p-2 md:p-4">
-              <CardTitle className="text-xs font-medium">Published</CardTitle>
+              <CardTitle className="text-xs font-medium">Processed</CardTitle>
               <CheckCircle2 className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent className="p-2 pt-0 md:p-4 md:pt-0">
-                <div className="text-lg md:text-2xl font-bold">{statusCounts.published || 0}</div>
+                <div className="text-lg md:text-2xl font-bold">{statusCounts.processed || 0}</div>
             </CardContent>
           </Card>
           <Card className="bg-red-500/20 dark:bg-red-500/10 border-red-500 text-red-900 dark:text-red-200">
@@ -413,7 +413,7 @@ export default function DashboardPage() {
                 <Button size="sm" variant={activeFilter === 'today' ? 'default' : 'outline'} onClick={() => setActiveFilter('today')}>Today</Button>
                 <Button size="sm" variant={activeFilter === 'yesterday' ? 'default' : 'outline'} onClick={() => setActiveFilter('yesterday')}>Yesterday</Button>
                 <Button size="sm" variant={activeFilter === 'processing' ? 'secondary' : 'outline'} className={activeFilter === 'processing' ? 'bg-yellow-500/80 text-white hover:bg-yellow-500/70' : ''} onClick={() => setActiveFilter('processing')}>Processing</Button>
-                <Button size="sm" variant={activeFilter === 'published' ? 'secondary' : 'outline'} className={activeFilter === 'published' ? 'bg-green-500/80 text-white hover:bg-green-500/70' : ''} onClick={() => setActiveFilter('published')}>Published</Button>
+                <Button size="sm" variant={activeFilter === 'processed' ? 'secondary' : 'outline'} className={activeFilter === 'processed' ? 'bg-green-500/80 text-white hover:bg-green-500/70' : ''} onClick={() => setActiveFilter('processed')}>Processed</Button>
                 <Button size="sm" variant={activeFilter === 'failed' ? 'destructive' : 'outline'} onClick={() => setActiveFilter('failed')}>Failed</Button>
                 <Button size="sm" variant={activeFilter === 'timed-out' ? 'secondary' : 'outline'} className={activeFilter === 'timed-out' ? 'bg-orange-500/80 text-white hover:bg-orange-500/70' : ''} onClick={() => setActiveFilter('timed-out')}>Timed-out</Button>
             </div>

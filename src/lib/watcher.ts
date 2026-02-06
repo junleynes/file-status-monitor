@@ -59,7 +59,7 @@ async function pollDirectories() {
 
       if (file.status === 'processing' && !inImport && !inFailed) {
         const userRemark = extractUserFromRemarks(file.remarks);
-        file.status = 'published';
+        file.status = 'processed';
         file.remarks = `File processed successfully. ${userRemark || ''}`.trim();
         file.lastUpdated = new Date().toISOString();
         filesToUpsert.push(file);
@@ -68,7 +68,7 @@ async function pollDirectories() {
         file.remarks = failureRemark;
         file.lastUpdated = new Date().toISOString();
         filesToUpsert.push(file);
-      } else if (inImport && ['published', 'failed', 'timed-out'].includes(file.status)) {
+      } else if (inImport && ['processed', 'failed', 'timed-out'].includes(file.status)) {
         const userRemark = extractUserFromRemarks(file.remarks);
         file.status = 'processing';
         file.remarks = file.remarks?.includes('Auto-') ? file.remarks : `Retrying file. ${userRemark || ''}`.trim();

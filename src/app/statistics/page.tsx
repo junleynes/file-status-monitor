@@ -27,10 +27,10 @@ export default function StatisticsPage() {
   }, []);
 
   const processChartData = (period: "daily" | "weekly" | "monthly"): ChartData[] => {
-    const publishedFiles = files.filter(file => file.status === 'published');
+    const processedFiles = files.filter(file => file.status === 'processed');
     const counts: { [key: string]: number } = {};
 
-    publishedFiles.forEach(file => {
+    processedFiles.forEach(file => {
       const date = parseISO(file.lastUpdated);
       let key: string;
 
@@ -69,7 +69,7 @@ export default function StatisticsPage() {
 
   const chartConfig = {
     count: {
-      label: "Published",
+      label: "Processed",
       color: "hsl(var(--chart-1))",
     },
   };
@@ -101,7 +101,7 @@ export default function StatisticsPage() {
             <div>
                 <h2 className="text-2xl font-bold tracking-tight">Statistics</h2>
                 <p className="text-muted-foreground">
-                    View and export publishing trends.
+                    View and export processing trends.
                 </p>
             </div>
             <Button onClick={handleGenerateReport}>
@@ -112,9 +112,9 @@ export default function StatisticsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Published Files</CardTitle>
+          <CardTitle>Processed Files</CardTitle>
           <CardDescription>
-            An overview of files published over time.
+            An overview of files processed over time.
           </CardDescription>
         </CardHeader>
         <CardContent>

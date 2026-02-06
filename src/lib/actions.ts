@@ -488,10 +488,10 @@ export async function importUsersFromCsv(csvContent: string): Promise<{ imported
 export async function generateStatisticsReport(): Promise<{ csv?: string; error?: string }> {
     try {
         const files = await db.getFileStatuses();
-        const publishedFiles = files.filter(file => file.status === 'published');
+        const processedFiles = files.filter(file => file.status === 'processed');
         
-        if (publishedFiles.length === 0) {
-            return { error: "No published files available to generate a report." };
+        if (processedFiles.length === 0) {
+            return { error: "No processed files available to generate a report." };
         }
 
         // Process data
@@ -499,7 +499,7 @@ export async function generateStatisticsReport(): Promise<{ csv?: string; error?
         const weeklyCounts: { [key: string]: number } = {};
         const monthlyCounts: { [key: string]: number } = {};
 
-        publishedFiles.forEach(file => {
+        processedFiles.forEach(file => {
             const date = parseISO(file.lastUpdated);
             const dailyKey = format(date, "yyyy-MM-dd");
             const weeklyKey = format(startOfWeek(date, { weekStartsOn: 1 }), "yyyy-MM-dd");
@@ -518,10 +518,10 @@ export async function generateStatisticsReport(): Promise<{ csv?: string; error?
         const summaryData = [...dailyData, ...weeklyData, ...monthlyData];
 
         // Format raw data
-        const rawData = publishedFiles.map(f => ({
+        const rawData = processedFiles.map(f => ({
             period: 'Raw Data',
             fileName: f.name,
-            publishedDate: f.lastUpdated,
+            processedDate: f.lastUpdated,
             source: f.source,
         }));
 
@@ -529,7 +529,7 @@ export async function generateStatisticsReport(): Promise<{ csv?: string; error?
         const summaryCsv = Papa.unparse(summaryData);
         const rawDataCsv = Papa.unparse(rawData);
 
-        const finalCsv = `STATISTICS SUMMARY\n${summaryCsv}\n\nRAW PUBLISHED DATA\n${rawDataCsv}`;
+        const finalCsv = `STATISTICS SUMMARY\n${summaryCsv}\n\nRAW PROCESSED DATA\n${rawDataCsv}`;
 
         await writeLog({ level: 'INFO', actor: 'system', action: 'EXPORT_STATISTICS', details: `Generated statistics report.` });
         revalidatePath('/logs');

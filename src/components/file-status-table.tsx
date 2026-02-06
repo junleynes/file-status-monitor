@@ -40,7 +40,7 @@ export function FileStatusTable({ files, onRetry, onRename, onDelete, isReadOnly
         return 'bg-yellow-500/80 border-transparent text-white';
       case 'failed':
         return 'bg-red-500/80 border-transparent text-white';
-      case 'published':
+      case 'processed':
         return 'bg-green-500/80 border-transparent text-white';
       case 'timed-out':
         return 'bg-orange-500/80 border-transparent text-white';
