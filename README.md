@@ -67,13 +67,13 @@ sudo systemctl start file-status-monitor
 ```
 
 ### 5. Configure Firewall (UFW)
-Allow port 3007 through the firewall:
+Allow port 3008 through the firewall:
 ```bash
 sudo ufw allow 3008/tcp
 sudo ufw reload
 sudo ufw status
 ```
-### 6. Configure Apache to Listen on Port 3007 (Optional)
+### 6. Configure Apache to Listen on Port 3008 (Optional)
 ```bash
 sudo nano /etc/apache2/ports.conf
 ```
@@ -108,6 +108,7 @@ View Service Logs
 ```bash
 sudo journalctl -u file-status-monitor -f
 ```
+
 
 
 
